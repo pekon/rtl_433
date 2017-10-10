@@ -677,6 +677,8 @@ static void rtlsdr_callback(unsigned char *iq_buf, uint32_t len, void *ctx) {
                             break;
                         case OOK_PULSE_PWM_OSV1:
                             p_events += pulse_demod_osv1(&demod->pulse_data, demod->r_devs[i]);
+			case OOK_PULSE_PIWM:
+			    p_events += pulse_demod_piwm(&demod->pulse_data, demod->r_devs[i]);
                             break;
                         // FSK decoders
                         case FSK_PULSE_PCM:
@@ -706,6 +708,7 @@ static void rtlsdr_callback(unsigned char *iq_buf, uint32_t len, void *ctx) {
                         case OOK_PULSE_MANCHESTER_ZEROBIT:
                         case OOK_PULSE_CLOCK_BITS:
                         case OOK_PULSE_PWM_OSV1:
+                        case OOK_PULSE_PIWM:
                             break;
                         case FSK_PULSE_PCM:
                             p_events += pulse_demod_pcm(&demod->fsk_pulse_data, demod->r_devs[i]);

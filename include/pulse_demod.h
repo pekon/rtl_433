@@ -139,6 +139,27 @@ int pulse_demod_clock_bits(const pulse_data_t *pulses, struct protocol_state *de
 int pulse_demod_osv1(const pulse_data_t *pulses, struct protocol_state *device);
 
 
+/// Demodulate a Pulse Interval and Width Modulation (PIWM)
+/// 
+/// Bits are encoded into lengths of pulses and gaps
+///  - Short gap/pulse will add 0 bit
+///  - Long gap/pulse will add 1 bit
+///
+/// An example signal and its translation:
+/// +---+   +-------+       +---+       +  high
+/// |   |   |       |       |   |       |
+/// |   |   |       |       |   |       |
+/// +   +---+       +-------+   +-------+  low
+///
+/// | 0 | 0 |   1   |   0   | 0 |   1   |
+///
+/// @param device->short_limit: Threshold between short and long pulse/gap [us]
+/// @param device->long_limit:  Maximum gap size before new row of bits [us]
+/// @param device->reset_limit: Maximum gap size before End Of Message [us].
+/// @return number of events processed
+int pulse_demod_piwm(const pulse_data_t *pulses, struct protocol_state *device);
+
+
 /// Simulate demodulation using a given signal code string
 ///
 /// The (optionally "0x" prefixed) hex code is processed into a bitbuffer_t.

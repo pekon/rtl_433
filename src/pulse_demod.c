@@ -403,6 +403,37 @@ int pulse_demod_osv1(const pulse_data_t *pulses, struct protocol_state *device) 
 }
 
 
+int pulse_demod_piwm(const pulse_data_t *pulses, struct protocol_state *device) {
+        int events = 0;
+	int start_bit_detected = 0;
+        bitbuffer_t bits = {0};
+        for(unsigned n = 0; n < pulses->num_pulses; ++n) {
+                if (pulses->pulse[n] < device->short_limit) {
+                        bitbuffer_add_bit(&bits, 0);
+                } else if (pulses->pulse[n] < device->long_limit) {
+                        bitbuffer_add_bit(&bits, 1);
+                } // ignore longer pulses
+		if (pulses->gap[n] < device->short_limit) {
+			bitbuffer_add_bit(&bits, 0);
+		} else if (pulses->gap[n] < device->long_limit) {
+                        bitbuffer_add_bit(&bits, 1);
+                } else if (pulses->gap[n] < device->reset_limit) {
+                        bitbuffer_add_row(&bits);
+		} else {
+			if (device->callback) {
+                                events += device->callback(&bits);
+                        }
+                        // Debug printout
+                        if(!device->callback || (debug_output && events > 0)) {
+                                fprintf(stderr, "pulse_demod_piwm(): %s \n", device->name);
+                                bitbuffer_print(&bits);
+                        }
+                        bitbuffer_clear(&bits);
+                }
+        }                                                                                          return events;
+}
+
+
 int pulse_demod_string(const char *code, struct protocol_state *device)
 {
 	int events = 0;
