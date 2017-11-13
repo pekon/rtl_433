@@ -32,7 +32,7 @@
 
 
 static int do_exit = 0;
-static int do_exit_async = 0, frequencies = 0, events = 0;
+static int do_exit_async = 0, frequencies = 0;
 uint32_t frequency[MAX_PROTOCOLS];
 time_t rawtime_old;
 int duration = 0;
@@ -49,6 +49,9 @@ int debug_output = 0;
 int quiet_mode = 0;
 int utc_mode = 0;
 int overwrite_mode = 0;
+int have_opt_i = 0;
+char *dev_serial_number;
+int device_specified = 0;
 
 typedef enum  {
     CONVERT_NATIVE,
@@ -57,7 +60,7 @@ typedef enum  {
 } conversion_mode_t;
 static conversion_mode_t conversion_mode = CONVERT_NATIVE;
 
-int num_r_devices = 0;
+uint16_t num_r_devices = 0;
 
 struct dm_state {
     FILE *out_file;
@@ -84,7 +87,7 @@ struct dm_state {
 
 
     /* Protocol states */
-    int r_dev_num;
+    uint16_t r_dev_num;
     struct protocol_state *r_devs[MAX_PROTOCOLS];
 
     pulse_data_t    pulse_data;
@@ -99,6 +102,7 @@ void usage(r_device *devices) {
             "rtl_433, an ISM band generic data receiver for RTL2832 based DVB-T receivers\n\n"
             "Usage:\t= Tuner options =\n"
             "\t[-d <RTL-SDR USB device index>] (default: 0)\n"
+            "\t[-i <RTL-SDR USB device serial number (can be set with rtl_eeprom -s)>]\n"
             "\t[-g <gain>] (default: 0 for auto)\n"
             "\t[-f <frequency>] [-f...] Receive frequency(s) (default: %i Hz)\n"
             "\t[-H <seconds>] Hop interval for polling of multiple frequencies (default: %i seconds)\n"
@@ -185,6 +189,10 @@ static void register_protocol(struct dm_state *demod, r_device *t_dev) {
     p->callback = t_dev->json_callback;
     p->name = t_dev->name;
     p->demod_arg = t_dev->demod_arg;
+    if (p->modulation == OOK_PULSE_PWM_PRECISE) {
+        PWM_Precise_Parameters *pwm_precise_parameters = (PWM_Precise_Parameters *)p->demod_arg;
+        pwm_precise_parameters->pulse_tolerance = (float)pwm_precise_parameters->pulse_tolerance / ((float)1000000 / (float)samp_rate);
+    }
     bitbuffer_clear(&p->bits);
 
     demod->r_devs[demod->r_dev_num] = p;
@@ -605,7 +613,7 @@ static void rtlsdr_callback(unsigned char *iq_buf, uint32_t len, void *ctx) {
     if (do_exit || do_exit_async)
         return;
 
-    if ((bytes_to_read > 0) && (bytes_to_read < len)) {
+    if ((bytes_to_read > 0) && (bytes_to_read <= len)) {
         len = bytes_to_read;
         do_exit = 1;
         rtlsdr_cancel_async(dev);
@@ -749,24 +757,21 @@ static void rtlsdr_callback(unsigned char *iq_buf, uint32_t len, void *ctx) {
 
         time_t rawtime;
         time(&rawtime);
-    if (frequencies > 1) {
-        if (difftime(rawtime, rawtime_old) > demod->hop_time || events >= DEFAULT_HOP_EVENTS) {
-            rawtime_old = rawtime;
-            events = 0;
-            do_exit_async = 1;
+	if (frequencies > 1 && difftime(rawtime, rawtime_old) > demod->hop_time) {
+	  rawtime_old = rawtime;
+	  do_exit_async = 1;
 #ifndef _WIN32
-            alarm(0); // cancel the watchdog timer
+	  alarm(0); // cancel the watchdog timer
 #endif
-            rtlsdr_cancel_async(dev);
-        }
-    }
+	  rtlsdr_cancel_async(dev);
+	}
     if (duration > 0 && rawtime >= stop_time) {
         do_exit_async = do_exit = 1;
-        fprintf(stderr, "Time expired, exiting!\n");
 #ifndef _WIN32
         alarm(0); // cancel the watchdog timer
 #endif
         rtlsdr_cancel_async(dev);
+        fprintf(stderr, "Time expired, exiting!\n");
     }
 }
 
@@ -881,14 +886,16 @@ int main(int argc, char **argv) {
     FILE *in_file;
     int n_read;
     int r = 0, opt;
-    int i, gain = 0;
+    int gain = 0;
+    uint32_t i = 0;
     int sync_mode = 0;
     int ppm_error = 0;
     struct dm_state* demod;
-    uint32_t dev_index = 0;
+    int dev_index = 0;
+    int have_opt_d = 0;
     int frequency_current = 0;
     uint32_t out_block_size = DEFAULT_BUF_LENGTH;
-    int device_count;
+    uint16_t device_count;
     char vendor[256], product[256], serial[256];
     int have_opt_R = 0;
     int register_all = 0;
@@ -913,10 +920,15 @@ int main(int argc, char **argv) {
     demod->level_limit = DEFAULT_LEVEL_LIMIT;
     demod->hop_time = DEFAULT_HOP_TIME;
 
-    while ((opt = getopt(argc, argv, "x:z:p:DtaAI:qm:r:l:d:f:H:g:s:b:n:SR:F:C:T:UWGy:")) != -1) {
+    while ((opt = getopt(argc, argv, "x:z:p:DtaAI:qm:r:l:d:i:f:H:g:s:b:n:SR:F:C:T:UWGy:")) != -1) {
         switch (opt) {
             case 'd':
                 dev_index = atoi(optarg);
+                have_opt_d = device_specified = dev_index > -1;
+                break;
+            case 'i':
+                have_opt_i = device_specified = 1;
+                dev_serial_number = optarg;
                 break;
             case 'f':
                 if (frequencies < MAX_PROTOCOLS) frequency[frequencies++] = (uint32_t) atof(optarg);
@@ -1094,27 +1106,43 @@ int main(int argc, char **argv) {
     device_count = rtlsdr_get_device_count();
     if (!device_count) {
         fprintf(stderr, "No supported devices found.\n");
-        if (!in_filename)
         exit(1);
     }
 
-    if (!quiet_mode) {
-        fprintf(stderr, "Found %d device(s):\n", device_count);
-        for (i = 0; i < device_count; i++) {
-        rtlsdr_get_device_usb_strings(i, vendor, product, serial);
-        fprintf(stderr, "  %d:  %s, %s, SN: %s\n", i, vendor, product, serial);
+    if (!quiet_mode) fprintf(stderr, "Found %d device(s)\n\n", device_count);
+
+    if (have_opt_i) {
+        dev_index = rtlsdr_get_index_by_serial(dev_serial_number);
+        if(dev_index < 0) {
+            if(!quiet_mode) fprintf(stderr, "Could not find device with serial #:%s (err %d)",
+                                    dev_serial_number, dev_index);
+            exit(1);
         }
-        fprintf(stderr, "\n");
-
-        fprintf(stderr, "Using device %d: %s\n",
-            dev_index, rtlsdr_get_device_name(dev_index));
     }
+    for (i = device_specified ? dev_index : 0;
+         //cast quiets -Wsign-compare; if dev_index were < 0, would have exited above
+         i < (device_specified ? (unsigned)dev_index + 1 : device_count);
+         i++) {
+        rtlsdr_get_device_usb_strings(i, vendor, product, serial);
+        
+        if (!quiet_mode) fprintf(stderr, "trying device  %d:  %s, %s, SN: %s\n",
+                                 i, vendor, product, serial);
 
-    r = rtlsdr_open(&dev, dev_index);
-    if (r < 0) {
-        fprintf(stderr, "Failed to open rtlsdr device #%d.\n", dev_index);
+        r = rtlsdr_open(&dev, i);
+        if (r < 0) {
+            if (!quiet_mode) fprintf(stderr, "Failed to open rtlsdr device #%d.\n\n",
+                                     i);
+        } else {
+            if (!quiet_mode) fprintf(stderr, "Using device %d: %s\n",
+                                     i, rtlsdr_get_device_name(i));
+            break;
+        }
+    }
+    if(r < 0) {
+        if(!quiet_mode) fprintf(stderr, "Unable to open a device\n");
         exit(1);
     }
+
 #ifndef _WIN32
     sigact.sa_handler = sighandler;
     sigemptyset(&sigact.sa_mask);
@@ -1316,8 +1344,7 @@ int main(int argc, char **argv) {
             alarm(0); // cancel the watchdog timer
 #endif
             do_exit_async = 0;
-            frequency_current++;
-            if (frequency_current > frequencies - 1) frequency_current = 0;
+            frequency_current = (frequency_current + 1) % frequencies;
         }
     }
 

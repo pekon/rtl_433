@@ -46,6 +46,7 @@ Running:
 ```
 Usage:	= Tuner options =
 	[-d <RTL-SDR USB device index>] (default: 0)
+    [-i <RTL-SDR USB device serial number (can be set with rtl_eeprom -s)>]
 	[-g <gain>] (default: 0 for auto)
 	[-f <frequency>] [-f...] Receive frequency(s) (default: 433920000 Hz)
 	[-H <seconds>] Hop interval for polling of multiple frequencies (default: 600 seconds)
@@ -175,6 +176,11 @@ Supported device protocols:
     [88]  Toyota TPMS
     [89]  Ford TPMS
     [90]  Renault TPMS
+    [91]  Infactory
+    [92]  Ft004b	
+    [93]  Ford car remote
+    [94]  Philips outdoor temperature sensor
+    [95]  Schrader TPMS EG53MA4
 
 * Disabled by default, use -R n or -G
 

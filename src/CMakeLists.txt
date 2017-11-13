@@ -42,6 +42,7 @@ add_executable(rtl_433
 	devices/esperanza_ews.c
 	devices/fineoffset.c
 	devices/fineoffset_wh1080.c
+	devices/ft004b.c
 	devices/generic_remote.c
 	devices/generic_temperature_sensor.c
 	devices/gt_wt_02.c
@@ -103,6 +104,8 @@ add_executable(rtl_433
 	devices/tpms_ford.c
 	devices/tpms_renault.c
 	devices/infactory.c
+	devices/fordremote.c
+	devices/philips.c
 
 )
 

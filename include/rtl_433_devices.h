@@ -94,7 +94,12 @@
 		DECL(tpms_toyota) \
 		DECL(tpms_ford) \
 		DECL(tpms_renault) \
-		DECL(infactory)
+		DECL(infactory) \
+		DECL(ft004b) \
+		DECL(fordremote) \
+		DECL(philips) \
+		DECL(schrader_EG53MA4)
+
 
 typedef struct {
 	char name[256];
